@@ -1,0 +1,50 @@
+version: 2
+
+project_name: secryn
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: secryn
+    main: ./main.go
+    binary: secryn
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/secryn/secryn-cli/pkg/version.Version={{ .Version }} -X github.com/secryn/secryn-cli/pkg/version.Commit={{ .ShortCommit }} -X github.com/secryn/secryn-cli/pkg/version.Date={{ .Date }}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: emrystech
+    name: secryn-cli
+  draft: false
+  prerelease: auto

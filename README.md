@@ -2,55 +2,57 @@
 
 Official command-line interface for Secryn, a self-hosted platform for managing secrets, keys, and certificates.
 
-## Features
+## Installation
 
-- Single-binary Go CLI built with Cobra
-- Config file in user config directory (default: `~/.config/secryn/config.yaml` on Linux/macOS)
-- Config override order: flags > environment variables > config file
-- JSON output support (`--json`) for automation and CI/CD
-- Clean API error handling with actionable messages for `401`, `403`, `404`, and `410`
-- Extensible command architecture for future commands like `backup create`, `backup restore`, `mcp test`
+### Install Script (primary)
 
-## Install
-
-### From source
+Linux and macOS only:
 
 ```bash
-go install github.com/secryn/secryn-cli@latest
+curl -fsSL https://cli.secryn.io/install.sh | bash
 ```
 
-### Build locally
+Pinned version:
 
 ```bash
-make tidy
-make build
+curl -fsSL https://cli.secryn.io/install.sh | bash -s -- --version v1.0.0
 ```
 
-Binary output: `bin/secryn`
+Notes:
+- The install script downloads prebuilt binaries from GitHub Releases.
+- Go is **not** required on the target machine.
+- The script verifies checksums when `sha256sum`, `shasum`, or `openssl` is available.
+
+### GitHub Releases (manual fallback)
+
+Download the correct archive for your OS/architecture from:
+
+- [GitHub Releases](https://github.com/emrystech/secryn-cli/releases)
+
+Then extract and place `secryn` on your `PATH`.
+
+## Verify installation
+
+```bash
+secryn --version
+```
 
 ## Configuration
-
-Set local config:
 
 ```bash
 secryn config set \
   --base-url https://demo.secryn.io/api \
   --vault-id VAULT_ID \
   --access-key TOKEN
-```
 
-Show effective config:
-
-```bash
 secryn config show
 ```
 
 Environment variable overrides:
-
 - `SECRYN_BASE_URL`
 - `SECRYN_VAULT_ID`
 - `SECRYN_ACCESS_KEY`
-- `SECRYN_CONFIG` (optional config file path)
+- `SECRYN_CONFIG`
 
 ## Commands
 
@@ -75,25 +77,31 @@ secryn auth test
 secryn doctor
 ```
 
-## Automation / CI/CD examples
+## CI/CD usage
 
-List secret names as JSON:
+```yaml
+steps:
+  - name: Install secryn
+    run: curl -fsSL https://cli.secryn.io/install.sh | bash
 
-```bash
-secryn secret list --names-only --json
+  - name: Verify auth
+    env:
+      SECRYN_BASE_URL: ${{ secrets.SECRYN_BASE_URL }}
+      SECRYN_VAULT_ID: ${{ secrets.SECRYN_VAULT_ID }}
+      SECRYN_ACCESS_KEY: ${{ secrets.SECRYN_ACCESS_KEY }}
+    run: secryn auth test --json
 ```
 
-Validate auth in a pipeline:
+## Release Process (maintainers)
+
+Creating and pushing a tag triggers the GitHub Actions release workflow.
 
 ```bash
-secryn auth test --json
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-Pull `.env` file during deployment:
-
-```bash
-secryn env pull > .env
-```
+The release workflow runs GoReleaser to build archives, generate `checksums.txt`, and publish artifacts to GitHub Releases.
 
 ## Exit codes
 
@@ -108,15 +116,11 @@ secryn env pull > .env
 ```bash
 make tidy
 make fmt
-make lint
 make test
+make lint
+make release-check
+make snapshot
 ```
-
-## Security
-
-- This repository contains only open-source CLI client code.
-- Do not commit access keys or generated secret files.
-- The CLI stores local config with restricted file permissions when possible.
 
 ## License
 

@@ -7,7 +7,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X $(PKG)/pkg/version.Version=$(VERSION) -X $(PKG)/pkg/version.Commit=$(COMMIT) -X $(PKG)/pkg/version.Date=$(DATE)
 
-.PHONY: build test lint fmt tidy clean
+.PHONY: build test lint fmt tidy snapshot release-check clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./
@@ -23,6 +23,12 @@ fmt:
 
 tidy:
 	go mod tidy
+
+snapshot:
+	goreleaser release --snapshot --clean
+
+release-check:
+	goreleaser check
 
 clean:
 	rm -rf bin dist

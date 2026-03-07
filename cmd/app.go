@@ -71,7 +71,7 @@ func (a *App) newRootCommand() *cobra.Command {
 		Short:         "Secryn CLI for secrets, keys, and certificates",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version.Version,
+		Version:       fmt.Sprintf("%s (commit %s, built %s)", version.Version, version.Commit, version.Date),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return a.loadRuntimeConfig(cmd)
 		},

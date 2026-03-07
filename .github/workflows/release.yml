@@ -5,30 +5,17 @@ on:
     tags:
       - 'v*'
 
-jobs:
-  build:
-    name: build-${{ matrix.goos }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
-            ext: ""
-            archive: tar.gz
-          - os: macos-latest
-            goos: darwin
-            ext: ""
-            archive: tar.gz
-          - os: windows-latest
-            goos: windows
-            ext: .exe
-            archive: zip
+permissions:
+  contents: write
 
+jobs:
+  release:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -36,50 +23,11 @@ jobs:
           go-version: '1.22.x'
           cache: true
 
-      - name: Test
-        run: go test ./...
-
-      - name: Build binary
-        shell: bash
-        run: |
-          mkdir -p dist
-          VERSION=${GITHUB_REF_NAME}
-          COMMIT=${GITHUB_SHA::7}
-          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          LDFLAGS="-s -w -X github.com/secryn/secryn-cli/pkg/version.Version=${VERSION} -X github.com/secryn/secryn-cli/pkg/version.Commit=${COMMIT} -X github.com/secryn/secryn-cli/pkg/version.Date=${DATE}"
-          GOOS=${{ matrix.goos }} GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o dist/secryn${{ matrix.ext }} ./
-
-      - name: Package (tar.gz)
-        if: matrix.archive == 'tar.gz'
-        shell: bash
-        run: |
-          tar -C dist -czf dist/secryn-${{ matrix.goos }}-amd64.tar.gz secryn${{ matrix.ext }}
-
-      - name: Package (zip)
-        if: matrix.archive == 'zip'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path dist/secryn${{ matrix.ext }} -DestinationPath dist/secryn-${{ matrix.goos }}-amd64.zip
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
         with:
-          name: secryn-${{ matrix.goos }}-amd64
-          path: dist/secryn-${{ matrix.goos }}-amd64.*
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/**/*.tar.gz
-            dist/**/*.zip
-          generate_release_notes: true
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
