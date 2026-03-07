@@ -95,7 +95,7 @@ func (c *Client) GetSecret(ctx context.Context, vaultID, name string) (Secret, e
 }
 
 func (c *Client) ListKeys(ctx context.Context, vaultID string) ([]Key, error) {
-	payload, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/keys", url.PathEscape(vaultID)), nil)
+	payload, err := c.doWithAccessKeyFallback(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/keys", url.PathEscape(vaultID)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -107,11 +107,23 @@ func (c *Client) ListKeys(ctx context.Context, vaultID string) ([]Key, error) {
 }
 
 func (c *Client) DownloadKey(ctx context.Context, vaultID, keyID string) ([]byte, error) {
-	return c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/keys/%s/download", url.PathEscape(vaultID), url.PathEscape(keyID)), nil)
+	primaryEndpoint := fmt.Sprintf("/v1/vaults/%s/keys/%s/download", url.PathEscape(vaultID), url.PathEscape(keyID))
+	payload, err := c.doWithAccessKeyFallback(ctx, http.MethodGet, primaryEndpoint, nil)
+	if err == nil {
+		return payload, nil
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || (apiErr.StatusCode != http.StatusNotFound && apiErr.StatusCode != http.StatusGone) {
+		return nil, err
+	}
+
+	fallbackEndpoint := fmt.Sprintf("/v1/vaults/%s?resource=%s", url.PathEscape(vaultID), url.QueryEscape(keyID))
+	return c.doWithAccessKeyFallback(ctx, http.MethodGet, fallbackEndpoint, nil)
 }
 
 func (c *Client) ListCertificates(ctx context.Context, vaultID string) ([]Certificate, error) {
-	payload, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/certificates", url.PathEscape(vaultID)), nil)
+	payload, err := c.doWithAccessKeyFallback(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/certificates", url.PathEscape(vaultID)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +135,19 @@ func (c *Client) ListCertificates(ctx context.Context, vaultID string) ([]Certif
 }
 
 func (c *Client) DownloadCertificate(ctx context.Context, vaultID, certID string) ([]byte, error) {
-	return c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/certificates/%s/download", url.PathEscape(vaultID), url.PathEscape(certID)), nil)
+	primaryEndpoint := fmt.Sprintf("/v1/vaults/%s/certificates/%s/download", url.PathEscape(vaultID), url.PathEscape(certID))
+	payload, err := c.doWithAccessKeyFallback(ctx, http.MethodGet, primaryEndpoint, nil)
+	if err == nil {
+		return payload, nil
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || (apiErr.StatusCode != http.StatusNotFound && apiErr.StatusCode != http.StatusGone) {
+		return nil, err
+	}
+
+	fallbackEndpoint := fmt.Sprintf("/v1/vaults/%s?resource=%s", url.PathEscape(vaultID), url.QueryEscape(certID))
+	return c.doWithAccessKeyFallback(ctx, http.MethodGet, fallbackEndpoint, nil)
 }
 
 func (c *Client) AuthTest(ctx context.Context, vaultID string) error {
@@ -141,8 +165,51 @@ func AsAPIError(err error, target *APIError) bool {
 }
 
 func (c *Client) do(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
+	return c.doWithQuery(ctx, method, endpoint, nil, body)
+}
+
+func (c *Client) doWithAccessKeyFallback(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
+	respBody, err := c.do(ctx, method, endpoint, body)
+	if err == nil || !c.shouldRetryWithQueryAccessKey(err) {
+		return respBody, err
+	}
+
+	return c.doWithQuery(ctx, method, endpoint, url.Values{"access_key": []string{c.accessKey}}, body)
+}
+
+func (c *Client) shouldRetryWithQueryAccessKey(err error) bool {
+	if strings.TrimSpace(c.accessKey) == "" {
+		return false
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden
+}
+
+func (c *Client) doWithQuery(ctx context.Context, method, endpoint string, query url.Values, body []byte) ([]byte, error) {
+	parsedEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("parse endpoint: %w", err)
+	}
+
 	fullURL := *c.baseURL
-	fullURL.Path = path.Join(c.baseURL.Path, endpoint)
+	fullURL.Path = path.Join(c.baseURL.Path, parsedEndpoint.Path)
+
+	combinedQuery := fullURL.Query()
+	for key, values := range parsedEndpoint.Query() {
+		for _, value := range values {
+			combinedQuery.Add(key, value)
+		}
+	}
+	for key, values := range query {
+		combinedQuery.Del(key)
+		for _, value := range values {
+			combinedQuery.Add(key, value)
+		}
+	}
+	fullURL.RawQuery = combinedQuery.Encode()
 
 	var bodyReader io.Reader
 	if len(body) > 0 {

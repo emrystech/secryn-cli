@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/secryn/secryn-cli/internal/output"
@@ -43,9 +44,21 @@ func (a *App) newKeyCommand() *cobra.Command {
 
 			rows := make([][]string, 0, len(keys))
 			for _, key := range keys {
-				rows = append(rows, []string{key.ID, key.Name, key.Algorithm, key.CreatedAt})
+				keyType := firstNonEmpty(key.KeyType, key.Algorithm)
+				keySize := ""
+				if key.KeySize > 0 {
+					keySize = strconv.Itoa(key.KeySize)
+				}
+				rows = append(rows, []string{
+					key.ID,
+					key.Name,
+					key.Type,
+					keyType,
+					keySize,
+					key.OutputFormat,
+				})
 			}
-			return output.Table(a.stdout, []string{"ID", "NAME", "ALGORITHM", "CREATED_AT"}, rows)
+			return output.Table(a.stdout, []string{"ID", "NAME", "TYPE", "KEY_TYPE", "KEY_SIZE", "OUTPUT_FORMAT"}, rows)
 		},
 	}
 
@@ -87,4 +100,13 @@ func (a *App) newKeyCommand() *cobra.Command {
 
 	keyCmd.AddCommand(listCmd, downloadCmd)
 	return keyCmd
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

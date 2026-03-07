@@ -43,9 +43,9 @@ func (a *App) newCertCommand() *cobra.Command {
 
 			rows := make([][]string, 0, len(certs))
 			for _, cert := range certs {
-				rows = append(rows, []string{cert.ID, cert.Name, cert.ExpiresAt, cert.CreatedAt})
+				rows = append(rows, []string{cert.ID, cert.Name, cert.Type, cert.ExpiresAt})
 			}
-			return output.Table(a.stdout, []string{"ID", "NAME", "EXPIRES_AT", "CREATED_AT"}, rows)
+			return output.Table(a.stdout, []string{"ID", "NAME", "TYPE", "EXPIRES_AT"}, rows)
 		},
 	}
 

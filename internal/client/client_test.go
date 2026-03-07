@@ -148,3 +148,151 @@ func TestAPIErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestListKeysRetriesWithAccessKeyQueryOnUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/vaults/vault-1/keys" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"unexpected path"}`)
+			return
+		}
+
+		if r.URL.Query().Get("access_key") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = fmt.Fprint(w, `{"message":"missing query token"}`)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `[{"id":"7283e707-ba2d-4d18-958c-3a2d60faf558","name":"private-key","key_type":"RSA","key_size":2048}]`)
+	}))
+	defer ts.Close()
+
+	cli, err := New(ts.URL, "access-token", ts.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	keys, err := cli.ListKeys(context.Background(), "vault-1")
+	if err != nil {
+		t.Fatalf("ListKeys() error = %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("len(keys) = %d, want 1", len(keys))
+	}
+	if keys[0].Name != "private-key" {
+		t.Fatalf("keys[0].Name = %q, want private-key", keys[0].Name)
+	}
+	if keys[0].KeyType != "RSA" {
+		t.Fatalf("keys[0].KeyType = %q, want RSA", keys[0].KeyType)
+	}
+	if keys[0].KeySize != 2048 {
+		t.Fatalf("keys[0].KeySize = %d, want 2048", keys[0].KeySize)
+	}
+}
+
+func TestDownloadKeyFallsBackToVaultResourceEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const keyID = "7283e707-ba2d-4d18-958c-3a2d60faf558"
+	const keyBody = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/vaults/vault-1/keys/"+keyID+"/download":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"not found"}`)
+		case r.URL.Path == "/v1/vaults/vault-1" && r.URL.Query().Get("resource") == keyID:
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, keyBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"unexpected path"}`)
+		}
+	}))
+	defer ts.Close()
+
+	cli, err := New(ts.URL, "access-token", ts.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := cli.DownloadKey(context.Background(), "vault-1", keyID)
+	if err != nil {
+		t.Fatalf("DownloadKey() error = %v", err)
+	}
+	if string(got) != keyBody {
+		t.Fatalf("DownloadKey() body mismatch\nwant: %q\ngot:  %q", keyBody, string(got))
+	}
+}
+
+func TestDownloadCertificateFallsBackToVaultResourceEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const certID = "5dd05f89-acf6-4f40-93d4-bde04303d7ad"
+	const certBody = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/vaults/vault-1/certificates/"+certID+"/download":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"not found"}`)
+		case r.URL.Path == "/v1/vaults/vault-1" && r.URL.Query().Get("resource") == certID:
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, certBody)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"unexpected path"}`)
+		}
+	}))
+	defer ts.Close()
+
+	cli, err := New(ts.URL, "access-token", ts.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	got, err := cli.DownloadCertificate(context.Background(), "vault-1", certID)
+	if err != nil {
+		t.Fatalf("DownloadCertificate() error = %v", err)
+	}
+	if string(got) != certBody {
+		t.Fatalf("DownloadCertificate() body mismatch\nwant: %q\ngot:  %q", certBody, string(got))
+	}
+}
+
+func TestListCertificatesParsesArrayPayload(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/vaults/vault-1/certificates" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"message":"unexpected path"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `[{"id":"811510c1-1113-4ae1-b9ee-d77379a5a1d8","name":"Server Side Up","type":"uploaded","expires_at":"2027-02-11T22:26:00.000000Z"}]`)
+	}))
+	defer ts.Close()
+
+	cli, err := New(ts.URL, "access-token", ts.Client())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	certs, err := cli.ListCertificates(context.Background(), "vault-1")
+	if err != nil {
+		t.Fatalf("ListCertificates() error = %v", err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("len(certs) = %d, want 1", len(certs))
+	}
+	if certs[0].Type != "uploaded" {
+		t.Fatalf("certs[0].Type = %q, want uploaded", certs[0].Type)
+	}
+	if certs[0].ExpiresAt != "2027-02-11T22:26:00.000000Z" {
+		t.Fatalf("certs[0].ExpiresAt = %q, unexpected", certs[0].ExpiresAt)
+	}
+}
