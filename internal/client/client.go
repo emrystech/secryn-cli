@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,7 +59,7 @@ func New(baseURL, accessKey string, httpClient *http.Client) (*Client, error) {
 }
 
 func (c *Client) ListSecrets(ctx context.Context, vaultID string) ([]Secret, error) {
-	payload, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/secrets", url.PathEscape(vaultID)), nil)
+	payload, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s", url.PathEscape(vaultID)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +73,18 @@ func (c *Client) ListSecrets(ctx context.Context, vaultID string) ([]Secret, err
 func (c *Client) GetSecret(ctx context.Context, vaultID, name string) (Secret, error) {
 	payload, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/secrets/%s", url.PathEscape(vaultID), url.PathEscape(name)), nil)
 	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			secrets, listErr := c.ListSecrets(ctx, vaultID)
+			if listErr != nil {
+				return Secret{}, listErr
+			}
+			for _, secret := range secrets {
+				if secret.Name == name {
+					return secret, nil
+				}
+			}
+		}
 		return Secret{}, err
 	}
 	item, err := decodeOne[Secret](payload)
@@ -114,20 +127,7 @@ func (c *Client) DownloadCertificate(ctx context.Context, vaultID, certID string
 }
 
 func (c *Client) AuthTest(ctx context.Context, vaultID string) error {
-	_, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s", url.PathEscape(vaultID)), nil)
-	if err == nil {
-		return nil
-	}
-
-	apiErr := &APIError{}
-	if !AsAPIError(err, apiErr) {
-		return err
-	}
-	if apiErr.StatusCode != http.StatusNotFound {
-		return err
-	}
-
-	_, err = c.do(ctx, http.MethodGet, fmt.Sprintf("/v1/vaults/%s/secrets", url.PathEscape(vaultID)), nil)
+	_, err := c.ListSecrets(ctx, vaultID)
 	return err
 }
 
@@ -213,8 +213,9 @@ func decodeList[T any](payload []byte) ([]T, error) {
 	}
 
 	var wrapped struct {
-		Items []T `json:"items"`
-		Data  []T `json:"data"`
+		Items   []T `json:"items"`
+		Data    []T `json:"data"`
+		Secrets []T `json:"secrets"`
 	}
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return nil, err
@@ -222,7 +223,13 @@ func decodeList[T any](payload []byte) ([]T, error) {
 	if wrapped.Items != nil {
 		return wrapped.Items, nil
 	}
-	return wrapped.Data, nil
+	if wrapped.Data != nil {
+		return wrapped.Data, nil
+	}
+	if wrapped.Secrets != nil {
+		return wrapped.Secrets, nil
+	}
+	return nil, fmt.Errorf("unexpected payload shape")
 }
 
 func decodeOne[T any](payload []byte) (T, error) {

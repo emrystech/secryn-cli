@@ -29,6 +29,11 @@ func (a *App) newEnvCommand() *cobra.Command {
 
 			values := make(map[string]string, len(secrets))
 			for _, item := range secrets {
+				if item.Value != "" {
+					values[item.Name] = item.Value
+					continue
+				}
+
 				secret, err := cli.GetSecret(a.context(), a.runtimeCfg.VaultID, item.Name)
 				if err != nil {
 					return mapAPIError(err)
