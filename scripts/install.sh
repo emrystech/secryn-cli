@@ -112,25 +112,24 @@ download "$CHECKSUM_URL" "$CHECKSUM_PATH"
 
 verify_checksum() {
   local expected
+  local actual
   expected="$(awk -v file="$ARCHIVE_NAME" '$2 == file || $2 == "*" file {print $1; exit}' "$CHECKSUM_PATH")"
   if [[ -z "$expected" ]]; then
     fail "checksum entry not found for ${ARCHIVE_NAME}"
   fi
 
   if command -v sha256sum >/dev/null 2>&1; then
-    printf '%s  %s\n' "$expected" "$ARCHIVE_PATH" | sha256sum --check --status
+    actual="$(sha256sum "$ARCHIVE_PATH" | awk '{print $1}')"
   elif command -v shasum >/dev/null 2>&1; then
-    local actual
     actual="$(shasum -a 256 "$ARCHIVE_PATH" | awk '{print $1}')"
-    [[ "$actual" == "$expected" ]] || fail "checksum verification failed"
   elif command -v openssl >/dev/null 2>&1; then
-    local actual
     actual="$(openssl dgst -sha256 "$ARCHIVE_PATH" | awk '{print $2}')"
-    [[ "$actual" == "$expected" ]] || fail "checksum verification failed"
   else
     echo "Warning: no checksum tool found (sha256sum, shasum, openssl). Skipping checksum verification."
     return
   fi
+
+  [[ "$actual" == "$expected" ]] || fail "checksum verification failed"
 
   echo "Checksum verified"
 }
