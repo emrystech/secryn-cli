@@ -9,13 +9,13 @@ Official command-line interface for Secryn, a self-hosted platform for managing 
 Linux and macOS only:
 
 ```bash
-curl -fsSL https://cli.secryn.io/install.sh | bash
+curl -fsSL https://cli.secryn.io | bash
 ```
 
 Pinned version:
 
 ```bash
-curl -fsSL https://cli.secryn.io/install.sh | bash -s -- --version v1.0.0
+curl -fsSL https://cli.secryn.io | bash -s -- --version v1.0.0
 ```
 
 Notes:
