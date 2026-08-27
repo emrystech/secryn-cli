@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,20 +50,40 @@ func Execute() int {
 }
 
 func (a *App) Execute() int {
+	return a.ExecuteArgs(os.Args[1:])
+}
+
+func (a *App) ExecuteArgs(args []string) int {
 	root := a.newRootCommand()
+	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		var cliErr *CLIError
 		if errors.As(err, &cliErr) {
-			_, _ = fmt.Fprintln(a.stderr, cliErr.Error())
+			a.writeError(cliErr)
 			if cliErr.Code == 0 {
 				return exitGeneric
 			}
 			return cliErr.Code
 		}
-		_, _ = fmt.Fprintln(a.stderr, err.Error())
+		a.writeError(&CLIError{Code: exitGeneric, ErrorCode: "internal_error", Message: err.Error(), Cause: err})
 		return exitGeneric
 	}
 	return exitOK
+}
+
+func (a *App) writeError(err *CLIError) {
+	if a.flags.JSON {
+		payload := jsonErrorResponse{Error: jsonError{
+			Code:       err.ErrorCode,
+			Message:    err.Error(),
+			HTTPStatus: err.HTTPStatus,
+		}}
+		payload.OK = false
+		if encodeErr := json.NewEncoder(a.stderr).Encode(payload); encodeErr == nil {
+			return
+		}
+	}
+	_, _ = fmt.Fprintln(a.stderr, err.Error())
 }
 
 func (a *App) newRootCommand() *cobra.Command {

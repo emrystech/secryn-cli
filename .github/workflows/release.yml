@@ -31,3 +31,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test documented installer
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/emrystech/secryn-cli/${GITHUB_REF_NAME}/scripts/install.sh" \
+            | bash -s -- --version "${GITHUB_REF_NAME}"
+          secryn --version

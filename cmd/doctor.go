@@ -43,9 +43,6 @@ func (a *App) newDoctorCommand() *cobra.Command {
 					return err
 				}
 				if err := cli.AuthTest(a.context(), a.runtimeCfg.VaultID); err != nil {
-					if a.flags.JSON {
-						_ = output.JSON(a.stdout, result)
-					}
 					return mapAPIError(err)
 				}
 				result.AuthOK = true

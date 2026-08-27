@@ -82,7 +82,7 @@ secryn doctor
 ```yaml
 steps:
   - name: Install secryn
-    run: curl -fsSL https://cli.secryn.io | bash
+    run: curl -fsSL https://raw.githubusercontent.com/emrystech/secryn-cli/main/scripts/install.sh | bash
 
   - name: Verify auth
     env:
@@ -102,6 +102,17 @@ git push origin v0.1.0
 ```
 
 The release workflow runs GoReleaser to build archives, generate `checksums.txt`, and publish artifacts to GitHub Releases.
+
+For a pinned, auditable manual install, download the versioned archive and its
+published checksum, then verify the archive before extracting it:
+
+```bash
+curl -fsSLo secryn_linux_amd64.tar.gz https://github.com/emrystech/secryn-cli/releases/download/v1.0.0/secryn_linux_amd64.tar.gz
+curl -fsSLo checksums.txt https://github.com/emrystech/secryn-cli/releases/download/v1.0.0/checksums.txt
+grep 'secryn_linux_amd64.tar.gz' checksums.txt | sha256sum -c -
+tar --no-same-owner -xzf secryn_linux_amd64.tar.gz
+sudo install -m 0755 secryn /usr/local/bin/secryn
+```
 
 ## Exit codes
 
