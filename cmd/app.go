@@ -25,6 +25,8 @@ type rootFlags struct {
 	JSON       bool
 }
 
+const skipConfigAnnotation = "skip-config"
+
 type App struct {
 	stdout     io.Writer
 	stderr     io.Writer
@@ -94,6 +96,9 @@ func (a *App) newRootCommand() *cobra.Command {
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s (commit %s, built %s)", version.Version, version.Commit, version.Date),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Annotations[skipConfigAnnotation] == "true" {
+				return nil
+			}
 			return a.loadRuntimeConfig(cmd)
 		},
 	}
@@ -112,6 +117,7 @@ func (a *App) newRootCommand() *cobra.Command {
 		a.newCertCommand(),
 		a.newAuthCommand(),
 		a.newDoctorCommand(),
+		a.newUpdateCommand(),
 	)
 
 	return root

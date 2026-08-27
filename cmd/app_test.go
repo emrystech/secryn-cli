@@ -24,6 +24,21 @@ func TestExecuteArgsJSONValidationError(t *testing.T) {
 	}
 }
 
+func TestUpdateSkipsInvalidVaultConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte(": invalid yaml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	app := NewApp(stdout, stderr)
+	app.envLookup = func(string) string { return "" }
+
+	if got := app.ExecuteArgs([]string{"update", "--check", "--version", "invalid", "--json", "--config", configPath}); got != exitUsage {
+		t.Fatalf("exit code = %d, want %d", got, exitUsage)
+	}
+	assertJSONError(t, stderr.Bytes(), "validation_error", 0)
+}
+
 func TestExecuteArgsJSONNotFoundError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

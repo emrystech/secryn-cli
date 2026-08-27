@@ -75,7 +75,13 @@ secryn cert download CERT_ID --output cert.pem
 
 secryn auth test
 secryn doctor
+secryn update --check
+secryn update
 ```
+
+`secryn update` installs the latest GitHub release in place after verifying its
+published SHA-256 checksum. Use `secryn update --version v1.0.1` to install a
+specific release, or add `--json` for machine-readable output.
 
 ## CI/CD usage
 
