@@ -23,7 +23,7 @@ func (a *App) newSecretCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			secrets, err := cli.ListSecrets(a.context(), a.runtimeCfg.VaultID)
+			secrets, err := a.listSecrets(a.context(), cli)
 			if err != nil {
 				return mapAPIError(err)
 			}
@@ -72,7 +72,7 @@ func (a *App) newSecretCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			secret, err := cli.GetSecret(a.context(), a.runtimeCfg.VaultID, args[0])
+			secret, err := a.getSecret(a.context(), cli, args[0])
 			if err != nil {
 				return mapAPIError(err)
 			}

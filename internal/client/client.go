@@ -165,7 +165,11 @@ func AsAPIError(err error, target *APIError) bool {
 }
 
 func (c *Client) do(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	return c.doWithQuery(ctx, method, endpoint, nil, body)
+	return c.doWithHeaders(ctx, method, endpoint, nil, body)
+}
+
+func (c *Client) doWithHeaders(ctx context.Context, method, endpoint string, headers http.Header, body []byte) ([]byte, error) {
+	return c.doWithQueryAndHeaders(ctx, method, endpoint, nil, headers, body)
 }
 
 func (c *Client) doWithAccessKeyFallback(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
@@ -189,6 +193,10 @@ func (c *Client) shouldRetryWithQueryAccessKey(err error) bool {
 }
 
 func (c *Client) doWithQuery(ctx context.Context, method, endpoint string, query url.Values, body []byte) ([]byte, error) {
+	return c.doWithQueryAndHeaders(ctx, method, endpoint, query, nil, body)
+}
+
+func (c *Client) doWithQueryAndHeaders(ctx context.Context, method, endpoint string, query url.Values, headers http.Header, body []byte) ([]byte, error) {
 	parsedEndpoint, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint: %w", err)
@@ -228,6 +236,11 @@ func (c *Client) doWithQuery(ctx context.Context, method, endpoint string, query
 	}
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
 	}
 
 	resp, err := c.httpClient.Do(req)

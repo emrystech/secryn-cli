@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/secryn/secryn-cli/internal/client"
 	"github.com/secryn/secryn-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +27,22 @@ func (a *App) newKeyCommand() *cobra.Command {
 				return err
 			}
 
-			keys, err := cli.ListKeys(a.context(), a.runtimeCfg.VaultID)
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError(err.Error())
+			}
+			var keys []client.Key
+			if mode == "legacy" {
+				keys, err = cli.ListKeys(a.context(), a.runtimeCfg.VaultID)
+			} else if mode == "e2ee" {
+				resources, resourceErr := a.listE2EEResources(a.context(), cli, "key")
+				err = resourceErr
+				for _, resource := range resources {
+					keys = append(keys, client.Key{ID: resource.ID, Name: resource.Name, KeyType: resource.KeyType, KeySize: resource.KeySize, KeyCurve: resource.KeyCurve, OutputFormat: resource.OutputFormat})
+				}
+			} else {
+				return usageError("unsupported encryption mode")
+			}
 			if err != nil {
 				return mapAPIError(err)
 			}
@@ -62,12 +79,13 @@ func (a *App) newKeyCommand() *cobra.Command {
 		},
 	}
 
-	var outputPath string
+	var outputPath, format string
+	var privateKey bool
 	downloadCmd := &cobra.Command{
 		Use:   "download <id>",
 		Short: "Download key material",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(outputPath) == "" {
 				return usageError("--output is required")
 			}
@@ -76,12 +94,37 @@ func (a *App) newKeyCommand() *cobra.Command {
 				return err
 			}
 
-			payload, err := cli.DownloadKey(a.context(), a.runtimeCfg.VaultID, args[0])
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError(err.Error())
+			}
+			var payload []byte
+			privateOutput := mode == "legacy"
+			if mode == "legacy" {
+				if cmd.Flags().Changed("format") || privateKey {
+					return usageError("--format and --private require an E2EE vault")
+				}
+				payload, err = cli.DownloadKey(a.context(), a.runtimeCfg.VaultID, args[0])
+			} else if mode == "e2ee" {
+				resource, resourceErr := a.getE2EEResourceByID(a.context(), cli, "key", args[0])
+				if resourceErr != nil {
+					err = resourceErr
+				} else {
+					payload, err = selectKeyDownload(resource, format, privateKey)
+					privateOutput = privateKey
+				}
+			} else {
+				return usageError("unsupported encryption mode")
+			}
 			if err != nil {
 				return mapAPIError(err)
 			}
 
-			if err := a.writeFile(outputPath, payload, 0o600); err != nil {
+			modeBits := os.FileMode(0o644)
+			if privateOutput {
+				modeBits = 0o600
+			}
+			if err := a.writeFile(outputPath, payload, modeBits); err != nil {
 				return err
 			}
 
@@ -97,6 +140,8 @@ func (a *App) newKeyCommand() *cobra.Command {
 		},
 	}
 	downloadCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path")
+	downloadCmd.Flags().StringVar(&format, "format", "", "Key encoding to download: pem or ssh")
+	downloadCmd.Flags().BoolVar(&privateKey, "private", false, "Download private key material instead of public material")
 
 	keyCmd.AddCommand(listCmd, downloadCmd)
 	return keyCmd

@@ -22,14 +22,15 @@ func (a *App) newAuthCommand() *cobra.Command {
 				return err
 			}
 
-			if err := cli.AuthTest(a.context(), a.runtimeCfg.VaultID); err != nil {
+			mode, err := a.testAuthentication(a.context(), cli)
+			if err != nil {
 				return mapAPIError(err)
 			}
 
 			if a.flags.JSON {
-				return output.JSON(a.stdout, map[string]any{"ok": true})
+				return output.JSON(a.stdout, map[string]any{"ok": true, "encryption_mode": mode})
 			}
-			_, _ = fmt.Fprintln(a.stdout, "Authentication check passed")
+			_, _ = fmt.Fprintf(a.stdout, "Authentication check passed (encryption: %s)\n", mode)
 			return nil
 		},
 	}

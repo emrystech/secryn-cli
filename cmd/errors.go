@@ -44,6 +44,10 @@ func internalError(msg string, err error) error {
 }
 
 func mapAPIError(err error) error {
+	var cliErr *CLIError
+	if errors.As(err, &cliErr) {
+		return err
+	}
 	var apiErr *client.APIError
 	if !errors.As(err, &apiErr) {
 		return &CLIError{Code: exitGeneric, ErrorCode: "network_error", Message: err.Error(), Cause: err}

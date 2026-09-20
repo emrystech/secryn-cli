@@ -1,0 +1,65 @@
+{
+  "encoding": "base64url-no-padding",
+  "name_indexes": [
+    {
+      "vault_id": "vault_01HZX3C8N7Q4M2K5P6R9T0VWXY",
+      "input_name": "  ＤＡＴＡＢＡＳＥ＿ＵＲＬ  ",
+      "normalized_name": "DATABASE_URL",
+      "index_hex": "9d9940f0a5839e769e0cf81c228e00136723439956cb1388e8b97c36d23b9ff9"
+    },
+    {
+      "vault_id": "vault_01HZX3C8N7Q4M2K5P6R9T0VWXY",
+      "input_name": "DATABASE_URL",
+      "normalized_name": "DATABASE_URL",
+      "index_hex": "9d9940f0a5839e769e0cf81c228e00136723439956cb1388e8b97c36d23b9ff9"
+    },
+    {
+      "vault_id": "vault_other",
+      "input_name": "DATABASE_URL",
+      "normalized_name": "DATABASE_URL",
+      "index_hex": "d63aa589b34e938c861c1149f9ca7a2cad3978841733d9feebfa8b7b17ded0e3"
+    }
+  ],
+  "protocol": "secryn-e2ee-v1",
+  "recipient": {
+    "context": {
+      "vault_id": "vault_01HZX3C8N7Q4M2K5P6R9T0VWXY",
+      "recipient_id": "recipient_01J00000000000000000000",
+      "key_version": 7
+    },
+    "envelope": {
+      "version": 1,
+      "key_version": 7,
+      "algorithm": "X25519-HKDF-SHA256-XCHACHA20-POLY1305",
+      "ephemeral_public_key": "YFpyXSpK3-6xop4X7dYhwbdZPujNvESsbEq24vgF0jw",
+      "nonce": "wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX",
+      "ciphertext": "TGEJT8qA3FKGqfDTPAjRXHD6wdib9dUOEKA4tiXx-L_aXlUh8C1X56HAp4Bqz_od"
+    },
+    "private_entropy_hex": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "public_key_hex": "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+    "wrap_entropy_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7"
+  },
+  "resource": {
+    "context": {
+      "vault_id": "vault_01HZX3C8N7Q4M2K5P6R9T0VWXY",
+      "resource_type": "secret",
+      "resource_id": "secret_01J00000000000000000000000",
+      "aad_version": 1,
+      "key_version": 7
+    },
+    "entropy_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f",
+    "envelope": {
+      "version": 1,
+      "aad_version": 1,
+      "key_version": 7,
+      "nonce": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZX",
+      "ciphertext": "QQMDyEsD3-VVkVOcC99DykXhKF93-L7h2z1gwDKMJq4vxP0Mk2lJsLdDGhGSyuE5jZi3GoJigb2XXbY7LV8gaYRQGiP40mE057b6ZmgA_hvvU2CZh_ekCEuO2YHLaMkrxLjhqGzo",
+      "wrapped_dek": {
+        "nonce": "WFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5v",
+        "ciphertext": "IdbUUqVAgjCjCfk_0fSefISHUoP3nthVHvlXBsjg6tRkpYxUUJNgt6JJelKCmdaD"
+      }
+    },
+    "plaintext_utf8": "{\"name\":\"ＤＡＴＡＢＡＳＥ＿ＵＲＬ\",\"value\":\"postgres://db.example/secryn\"}"
+  },
+  "vek_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+}
