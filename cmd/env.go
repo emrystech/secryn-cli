@@ -22,7 +22,7 @@ func (a *App) newEnvCommand() *cobra.Command {
 				return err
 			}
 
-			secrets, err := cli.ListSecrets(a.context(), a.runtimeCfg.VaultID)
+			secrets, err := a.listSecrets(a.context(), cli)
 			if err != nil {
 				return mapAPIError(err)
 			}
@@ -34,11 +34,16 @@ func (a *App) newEnvCommand() *cobra.Command {
 					continue
 				}
 
-				secret, err := cli.GetSecret(a.context(), a.runtimeCfg.VaultID, item.Name)
+				secret, err := a.getSecret(a.context(), cli, item.Name)
 				if err != nil {
 					return mapAPIError(err)
 				}
 				values[secret.Name] = secret.Value
+			}
+			for name := range values {
+				if !validEnvName(name) {
+					return usageError("env pull rejected a secret name that is not a valid environment variable")
+				}
 			}
 
 			if a.flags.JSON {
@@ -52,4 +57,21 @@ func (a *App) newEnvCommand() *cobra.Command {
 
 	envCmd.AddCommand(pullCmd)
 	return envCmd
+}
+
+func validEnvName(name string) bool {
+	if name == "" || !isEnvNameStart(name[0]) {
+		return false
+	}
+	for index := 1; index < len(name); index++ {
+		character := name[index]
+		if !isEnvNameStart(character) && (character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func isEnvNameStart(character byte) bool {
+	return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || character == '_'
 }

@@ -13,9 +13,11 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "secryn", "config.yaml")
 	want := Config{
-		BaseURL:   "https://demo.secryn.io/api",
-		VaultID:   "vault-1",
-		AccessKey: "token-abc",
+		BaseURL:             "https://demo.secryn.io/api",
+		VaultID:             "vault-1",
+		AccessKey:           "token-abc",
+		RecipientID:         "recipient-1",
+		RecipientPrivateKey: "encoded-private-key",
 	}
 
 	if err := Save(path, want); err != nil {
@@ -27,7 +29,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if got != want {
-		t.Fatalf("Load() mismatch\nwant: %#v\ngot:  %#v", want, got)
+		t.Fatal("Load() did not preserve the saved configuration")
 	}
 
 	if runtime.GOOS != "windows" {
@@ -44,8 +46,14 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 func TestMergePrecedence(t *testing.T) {
 	t.Parallel()
 
-	fileCfg := Config{BaseURL: "https://file", VaultID: "vault-file", AccessKey: "file-token"}
-	envCfg := Config{BaseURL: "https://env", VaultID: "vault-env", AccessKey: "env-token"}
+	fileCfg := Config{
+		BaseURL: "https://file", VaultID: "vault-file", AccessKey: "file-token",
+		RecipientID: "file-recipient", RecipientPrivateKey: "file-private",
+	}
+	envCfg := Config{
+		BaseURL: "https://env", VaultID: "vault-env", AccessKey: "env-token",
+		RecipientID: "env-recipient", RecipientPrivateKey: "env-private",
+	}
 	overrides := Overrides{
 		BaseURL:      "https://flag",
 		VaultID:      "vault-flag",
@@ -56,9 +64,12 @@ func TestMergePrecedence(t *testing.T) {
 	}
 
 	got := Merge(fileCfg, envCfg, overrides)
-	want := Config{BaseURL: "https://flag", VaultID: "vault-env", AccessKey: "flag-token"}
+	want := Config{
+		BaseURL: "https://flag", VaultID: "vault-env", AccessKey: "flag-token",
+		RecipientID: "env-recipient", RecipientPrivateKey: "env-private",
+	}
 	if got != want {
-		t.Fatalf("Merge() mismatch\nwant: %#v\ngot:  %#v", want, got)
+		t.Fatal("Merge() did not apply file, environment, and flag precedence")
 	}
 }
 
@@ -79,5 +90,18 @@ func TestResolvePathPrecedence(t *testing.T) {
 	}
 	if path != "/tmp/env.yaml" {
 		t.Fatalf("ResolvePath() = %q, want /tmp/env.yaml", path)
+	}
+}
+
+func TestLoadRejectsCredentialFileWithBroadPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission semantics do not apply")
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("access_key: fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load() accepted a credential-bearing config readable by group or others")
 	}
 }

@@ -76,11 +76,17 @@ func (a *App) newConfigShowCommand() *cobra.Command {
 		Use:   "show",
 		Short: "Show effective configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError("invalid E2EE configuration: " + err.Error())
+			}
 			view := map[string]string{
-				"config_path": a.cfgPath,
-				"base_url":    a.runtimeCfg.BaseURL,
-				"vault_id":    a.runtimeCfg.VaultID,
-				"access_key":  redactAccessKey(a.runtimeCfg.AccessKey),
+				"config_path":     a.cfgPath,
+				"base_url":        a.runtimeCfg.BaseURL,
+				"vault_id":        a.runtimeCfg.VaultID,
+				"access_key":      redactAccessKey(a.runtimeCfg.AccessKey),
+				"encryption_mode": mode,
+				"recipient_id":    a.runtimeCfg.RecipientID,
 			}
 			if a.flags.JSON {
 				return output.JSON(a.stdout, view)
@@ -90,6 +96,8 @@ func (a *App) newConfigShowCommand() *cobra.Command {
 			_, _ = fmt.Fprintf(a.stdout, "Base URL:    %s\n", valueOrPlaceholder(view["base_url"]))
 			_, _ = fmt.Fprintf(a.stdout, "Vault ID:    %s\n", valueOrPlaceholder(view["vault_id"]))
 			_, _ = fmt.Fprintf(a.stdout, "Access Key:  %s\n", valueOrPlaceholder(view["access_key"]))
+			_, _ = fmt.Fprintf(a.stdout, "Encryption:  %s\n", view["encryption_mode"])
+			_, _ = fmt.Fprintf(a.stdout, "Recipient:   %s\n", valueOrPlaceholder(view["recipient_id"]))
 			return nil
 		},
 	}

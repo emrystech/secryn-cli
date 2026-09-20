@@ -10,10 +10,11 @@ import (
 )
 
 type doctorResult struct {
-	ConfigPath string   `json:"config_path"`
-	ConfigFile bool     `json:"config_file"`
-	Missing    []string `json:"missing"`
-	AuthOK     bool     `json:"auth_ok"`
+	ConfigPath     string   `json:"config_path"`
+	ConfigFile     bool     `json:"config_file"`
+	Missing        []string `json:"missing"`
+	AuthOK         bool     `json:"auth_ok"`
+	EncryptionMode string   `json:"encryption_mode"`
 }
 
 func (a *App) newDoctorCommand() *cobra.Command {
@@ -22,6 +23,11 @@ func (a *App) newDoctorCommand() *cobra.Command {
 		Short: "Run local configuration and API connectivity checks",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			result := doctorResult{ConfigPath: a.cfgPath}
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError("invalid E2EE configuration: " + err.Error())
+			}
+			result.EncryptionMode = mode
 
 			if _, err := os.Stat(a.cfgPath); err == nil {
 				result.ConfigFile = true
@@ -42,7 +48,7 @@ func (a *App) newDoctorCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := cli.AuthTest(a.context(), a.runtimeCfg.VaultID); err != nil {
+				if _, err := a.testAuthentication(a.context(), cli); err != nil {
 					return mapAPIError(err)
 				}
 				result.AuthOK = true
@@ -65,6 +71,7 @@ func (a *App) newDoctorCommand() *cobra.Command {
 			if result.AuthOK {
 				_, _ = fmt.Fprintln(a.stdout, "Authentication: ok")
 			}
+			_, _ = fmt.Fprintf(a.stdout, "Encryption: %s\n", result.EncryptionMode)
 			_, _ = fmt.Fprintln(a.stdout, "Doctor checks passed")
 			return nil
 		},

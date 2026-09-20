@@ -28,6 +28,7 @@ type rootFlags struct {
 const skipConfigAnnotation = "skip-config"
 
 type App struct {
+	stdin      io.Reader
 	stdout     io.Writer
 	stderr     io.Writer
 	envLookup  func(string) string
@@ -39,6 +40,7 @@ type App struct {
 
 func NewApp(stdout, stderr io.Writer) *App {
 	return &App{
+		stdin:      os.Stdin,
 		stdout:     stdout,
 		stderr:     stderr,
 		envLookup:  os.Getenv,
@@ -97,9 +99,21 @@ func (a *App) newRootCommand() *cobra.Command {
 		Version:       fmt.Sprintf("%s (commit %s, built %s)", version.Version, version.Commit, version.Date),
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if cmd.Annotations[skipConfigAnnotation] == "true" {
+				cfgPath, pathErr := config.ResolvePath(a.flags.ConfigPath, a.flagChanged(cmd, "config"), a.envLookup)
+				if pathErr == nil {
+					if fileCfg, loadErr := config.Load(cfgPath); loadErr == nil && fileCfg.E2EEBootstrapPending && !isE2EEInitCommand(cmd) {
+						return pendingBootstrapCommandError()
+					}
+				}
 				return nil
 			}
-			return a.loadRuntimeConfig(cmd)
+			if err := a.loadRuntimeConfig(cmd); err != nil {
+				return err
+			}
+			if a.runtimeCfg.E2EEBootstrapPending && !isE2EEInitCommand(cmd) {
+				return pendingBootstrapCommandError()
+			}
+			return nil
 		},
 	}
 
@@ -117,10 +131,20 @@ func (a *App) newRootCommand() *cobra.Command {
 		a.newCertCommand(),
 		a.newAuthCommand(),
 		a.newDoctorCommand(),
+		a.newE2EECommand(),
+		a.newMCPCommand(),
 		a.newUpdateCommand(),
 	)
 
 	return root
+}
+
+func isE2EEInitCommand(cmd *cobra.Command) bool {
+	return cmd != nil && cmd.Name() == "init" && cmd.Parent() != nil && cmd.Parent().Name() == "e2ee"
+}
+
+func pendingBootstrapCommandError() error {
+	return usageError("E2EE bootstrap recovery is pending; rerun `secryn e2ee init` before using any other command")
 }
 
 func (a *App) loadRuntimeConfig(cmd *cobra.Command) error {
@@ -136,9 +160,11 @@ func (a *App) loadRuntimeConfig(cmd *cobra.Command) error {
 	}
 
 	envCfg := config.Config{
-		BaseURL:   strings.TrimSpace(a.envLookup("SECRYN_BASE_URL")),
-		VaultID:   strings.TrimSpace(a.envLookup("SECRYN_VAULT_ID")),
-		AccessKey: strings.TrimSpace(a.envLookup("SECRYN_ACCESS_KEY")),
+		BaseURL:             strings.TrimSpace(a.envLookup("SECRYN_BASE_URL")),
+		VaultID:             strings.TrimSpace(a.envLookup("SECRYN_VAULT_ID")),
+		AccessKey:           strings.TrimSpace(a.envLookup("SECRYN_ACCESS_KEY")),
+		RecipientID:         strings.TrimSpace(a.envLookup("SECRYN_RECIPIENT_ID")),
+		RecipientPrivateKey: strings.TrimSpace(a.envLookup("SECRYN_RECIPIENT_PRIVATE_KEY")),
 	}
 	if envCfg.BaseURL != "" {
 		normalized, err := config.NormalizeBaseURL(envCfg.BaseURL)
@@ -195,6 +221,9 @@ func (a *App) apiClient() (*client.Client, error) {
 	if len(missing) > 0 {
 		return nil, usageError("missing required configuration: " + strings.Join(missing, ", ") + ". Use `secryn config set` or flags/environment variables")
 	}
+	if _, err := a.runtimeCfg.EncryptionMode(); err != nil {
+		return nil, usageError("invalid E2EE configuration: " + err.Error())
+	}
 
 	cli, err := client.New(a.runtimeCfg.BaseURL, a.runtimeCfg.AccessKey, a.httpClient)
 	if err != nil {
@@ -208,9 +237,34 @@ func (a *App) writeFile(path string, payload []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return internalError("create output directory failed", err)
 	}
-	if err := os.WriteFile(path, payload, mode); err != nil {
+	temporary, err := os.CreateTemp(dir, ".secryn-output-*")
+	if err != nil {
+		return internalError("create temporary output file failed", err)
+	}
+	temporaryPath := temporary.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = temporary.Close()
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(mode.Perm()); err != nil {
+		return internalError("secure output file permissions failed", err)
+	}
+	if _, err := temporary.Write(payload); err != nil {
 		return internalError("write output file failed", err)
 	}
+	if err := temporary.Sync(); err != nil {
+		return internalError("sync output file failed", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return internalError("close output file failed", err)
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return internalError("replace output file failed", err)
+	}
+	committed = true
 	return nil
 }
 

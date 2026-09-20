@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/secryn/secryn-cli/internal/client"
 	"github.com/secryn/secryn-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +26,22 @@ func (a *App) newCertCommand() *cobra.Command {
 				return err
 			}
 
-			certs, err := cli.ListCertificates(a.context(), a.runtimeCfg.VaultID)
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError(err.Error())
+			}
+			var certs []client.Certificate
+			if mode == "legacy" {
+				certs, err = cli.ListCertificates(a.context(), a.runtimeCfg.VaultID)
+			} else if mode == "e2ee" {
+				resources, resourceErr := a.listE2EEResources(a.context(), cli, "certificate")
+				err = resourceErr
+				for _, resource := range resources {
+					certs = append(certs, client.Certificate{ID: resource.ID, Name: resource.Name})
+				}
+			} else {
+				return usageError("unsupported encryption mode")
+			}
 			if err != nil {
 				return mapAPIError(err)
 			}
@@ -50,6 +67,7 @@ func (a *App) newCertCommand() *cobra.Command {
 	}
 
 	var outputPath string
+	var privateKey bool
 	downloadCmd := &cobra.Command{
 		Use:   "download <id>",
 		Short: "Download certificate material",
@@ -63,12 +81,40 @@ func (a *App) newCertCommand() *cobra.Command {
 				return err
 			}
 
-			payload, err := cli.DownloadCertificate(a.context(), a.runtimeCfg.VaultID, args[0])
+			mode, err := a.runtimeCfg.EncryptionMode()
+			if err != nil {
+				return usageError(err.Error())
+			}
+			var payload []byte
+			if mode == "legacy" {
+				if privateKey {
+					return usageError("--private-key requires an E2EE vault")
+				}
+				payload, err = cli.DownloadCertificate(a.context(), a.runtimeCfg.VaultID, args[0])
+			} else if mode == "e2ee" {
+				resource, resourceErr := a.getE2EEResourceByID(a.context(), cli, "certificate", args[0])
+				if resourceErr != nil {
+					err = resourceErr
+				} else if privateKey {
+					if resource.PrivateKeyPEM == "" {
+						return usageError("certificate has no private key material")
+					}
+					payload = []byte(resource.PrivateKeyPEM)
+				} else {
+					payload = []byte(resource.CertificatePEM)
+				}
+			} else {
+				return usageError("unsupported encryption mode")
+			}
 			if err != nil {
 				return mapAPIError(err)
 			}
 
-			if err := a.writeFile(outputPath, payload, 0o644); err != nil {
+			modeBits := os.FileMode(0o644)
+			if privateKey {
+				modeBits = 0o600
+			}
+			if err := a.writeFile(outputPath, payload, modeBits); err != nil {
 				return err
 			}
 
@@ -84,6 +130,7 @@ func (a *App) newCertCommand() *cobra.Command {
 		},
 	}
 	downloadCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path")
+	downloadCmd.Flags().BoolVar(&privateKey, "private-key", false, "Download private key material instead of the certificate")
 
 	certCmd.AddCommand(listCmd, downloadCmd)
 	return certCmd
