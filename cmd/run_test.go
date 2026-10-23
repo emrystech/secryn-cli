@@ -380,7 +380,7 @@ func TestRunFetchesValueWhenListOmitsIt(t *testing.T) {
 
 	h := newRunExec(t, nil)
 	var gets int
-	secrets := []client.Secret{{Name: "DB_PASSWORD", Value: "from-get"}}
+	secrets := []client.Secret{{Name: "DB_PASSWORD", Value: "example-value"}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer token" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -404,10 +404,10 @@ func TestRunFetchesValueWhenListOmitsIt(t *testing.T) {
 	if gets != 1 {
 		t.Fatalf("get calls = %d, want 1", gets)
 	}
-	if envMap(h.env)["DB_PASSWORD"] != "from-get" {
+	if envMap(h.env)["DB_PASSWORD"] != "example-value" {
 		t.Fatalf("env = %#v", h.env)
 	}
-	assertNoSecrets(t, h, "from-get")
+	assertNoSecrets(t, h, "example-value")
 }
 
 func TestRunAuthFromFlagsAndEnvironment(t *testing.T) {
