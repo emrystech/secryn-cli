@@ -21,19 +21,19 @@ func TestSecretListUpdatedAt(t *testing.T) {
 			body: `{
 				"id":"vault",
 				"name":"vault",
-				"secrets":[{"name":"DB_PASSWORD","value":"super-secret","content_type":"text/plain","updated_at":"2026-03-07T15:04:05Z"}]
+				"secrets":[{"name":"TEST_VAR_A","value":"fixture-list","content_type":"text/plain","updated_at":"2026-03-07T15:04:05Z"}]
 			}`,
 			want:    "2026-03-07T15:04:05Z",
-			missing: "super-secret",
+			missing: "fixture-list",
 		},
 		{
 			name: "empty when the api omits a timestamp",
 			body: `{
 				"id":"vault",
 				"name":"vault",
-				"secrets":[{"id":"secret-id","name":"DB_PASSWORD","value":"super-secret","content_type":"text/plain","tags":[]}]
+				"secrets":[{"id":"item-1","name":"TEST_VAR_A","value":"fixture-list","content_type":"text/plain","tags":[]}]
 			}`,
-			missing: "super-secret",
+			missing: "fixture-list",
 		},
 	}
 
@@ -55,11 +55,11 @@ func TestSecretListUpdatedAt(t *testing.T) {
 			stdout, stderr := &strings.Builder{}, &strings.Builder{}
 			app := NewApp(stdout, stderr)
 			app.envLookup = func(string) string { return "" }
-			cfg := writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+			cfg := writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 			if code := app.ExecuteArgs([]string{"secret", "list", "--config", cfg}); code != 0 {
 				t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
 			}
-			if !strings.Contains(stdout.String(), "UPDATED_AT") || !strings.Contains(stdout.String(), "DB_PASSWORD") {
+			if !strings.Contains(stdout.String(), "UPDATED_AT") || !strings.Contains(stdout.String(), "TEST_VAR_A") {
 				t.Fatalf("stdout = %q", stdout.String())
 			}
 			if tt.want != "" && !strings.Contains(stdout.String(), tt.want) {

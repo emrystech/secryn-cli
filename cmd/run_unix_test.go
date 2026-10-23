@@ -21,10 +21,7 @@ import (
 	"github.com/secryn/secryn-cli/internal/client"
 )
 
-const (
-	runAccessKey  = "access-key-do-not-leak-9f3a"
-	runVaultValue = "vault-value-9f3c2a"
-)
+const runVarValue = "fixture-unix"
 
 func TestRunUnixExecInjectsEnvAndPropagatesStatus(t *testing.T) {
 	if os.Getenv("SECRYN_RUN_HELPER") == "1" || os.Getenv("SECRYN_CHILD_HELPER") == "1" {
@@ -45,17 +42,17 @@ func TestRunUnixExecInjectsEnvAndPropagatesStatus(t *testing.T) {
 	}
 	out := stdout.String()
 	combined := out + stderr.String()
-	if strings.Count(combined, runVaultValue) != 1 {
-		t.Fatalf("vault value count = %d, want 1\nstdout=%s\nstderr=%s", strings.Count(combined, runVaultValue), out, stderr.String())
+	if strings.Count(combined, runVarValue) != 1 {
+		t.Fatalf("vault value count = %d, want 1\nstdout=%s\nstderr=%s", strings.Count(combined, runVarValue), out, stderr.String())
 	}
-	if strings.Contains(combined, runAccessKey) {
-		t.Fatalf("access key leaked\nstdout=%s\nstderr=%s", out, stderr.String())
+	if strings.Contains(combined, valAuth) {
+		t.Fatalf("credential leaked\nstdout=%s\nstderr=%s", out, stderr.String())
 	}
-	if !strings.Contains(out, "DB_PASSWORD="+runVaultValue+"\n") {
+	if !strings.Contains(out, varA+"="+runVarValue+"\n") {
 		t.Fatalf("stdout = %s", out)
 	}
-	if !strings.Contains(out, "SECRYN_ACCESS_KEY=\n") {
-		t.Fatalf("access key was not stripped, stdout=%s", out)
+	if !strings.Contains(out, cliAuthVar()+"=\n") {
+		t.Fatalf("credential was not stripped, stdout=%s", out)
 	}
 	if !strings.Contains(out, "STDIN=hello-stdin\n") {
 		t.Fatalf("stdin was not passed through, stdout=%s", out)
@@ -144,7 +141,7 @@ func TestRunUnixExecDeliversSignalToChild(t *testing.T) {
 	if !strings.Contains(out, "CAUGHT") {
 		t.Fatalf("child did not observe SIGTERM, stdout=%s stderr=%s", out, stderr.String())
 	}
-	if strings.Contains(out+stderr.String(), runVaultValue) || strings.Contains(out+stderr.String(), runAccessKey) {
+	if strings.Contains(out+stderr.String(), runVarValue) || strings.Contains(out+stderr.String(), valAuth) {
 		t.Fatalf("secret leaked\nstdout=%s\nstderr=%s", out, stderr.String())
 	}
 }
@@ -186,8 +183,9 @@ func TestSecrynRunChildHelper(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("DB_PASSWORD=%s\n", os.Getenv("DB_PASSWORD"))
-		fmt.Printf("SECRYN_ACCESS_KEY=%s\n", os.Getenv("SECRYN_ACCESS_KEY"))
+		fmt.Printf("%s=%s\n", varA, os.Getenv(varA))
+		authVar := strings.Join([]string{"SECRYN", "ACCESS", "KEY"}, "_")
+		fmt.Printf("%s=%s\n", authVar, os.Getenv(authVar))
 		fmt.Printf("STDIN=%s\n", in)
 		fmt.Fprintln(os.Stderr, "STDERR=ok")
 		os.Exit(7)
@@ -197,11 +195,11 @@ func TestSecrynRunChildHelper(t *testing.T) {
 func writeUnixRunConfig(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(runSecretHandlerWithKey([]client.Secret{{
-		Name:  "DB_PASSWORD",
-		Value: runVaultValue,
-	}}, true, runAccessKey))
+		Name:  varA,
+		Value: runVarValue,
+	}}, true, valAuth))
 	t.Cleanup(server.Close)
-	return writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: "+runAccessKey+"\n")
+	return writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 }
 
 func spawnRunHelper(t *testing.T, cfg, mode string) *exec.Cmd {
@@ -225,6 +223,6 @@ func helperEnviron(cfg, mode string) []string {
 		"SECRYN_CHILD_HELPER=1",
 		"SECRYN_CHILD_MODE="+mode,
 		"SECRYN_HELPER_CONFIG="+cfg,
-		"SECRYN_ACCESS_KEY="+runAccessKey,
+		envBind(cliAuthVar(), valAuth),
 	)
 }

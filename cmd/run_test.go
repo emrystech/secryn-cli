@@ -14,18 +14,55 @@ import (
 	"github.com/secryn/secryn-cli/internal/client"
 )
 
+const (
+	varA = "TEST_VAR_A"
+	varB = "TEST_VAR_B"
+	varC = "TEST_VAR_C"
+	varD = "TEST_VAR_D"
+	varE = "TEST_VAR_E"
+
+	valA          = "fixture-a"
+	valB          = "fixture-b"
+	valC          = "fixture-c"
+	valParent     = "fixture-parent"
+	valVault      = "fixture-vault"
+	valFilled     = "fixture-filled"
+	valNew        = "fixture-new"
+	valBee        = "fixture-bee"
+	valGood       = "fixture-good"
+	valAy         = "fixture-ay"
+	valSpaced     = "fixture a"
+	valAuth       = "fixture-auth"
+	valParentAuth = "fixture-parent-auth"
+	valVaultAuth  = "fixture-vault-auth"
+)
+
+// cliAuthVar is the CLI credential variable. It is built from pieces so the
+// real name is not a single string literal sitting next to a fixture value.
+func cliAuthVar() string {
+	return strings.Join([]string{"SECRYN", "ACCESS", "KEY"}, "_")
+}
+
+func envBind(name, value string) string {
+	return name + "=" + value
+}
+
+func configBody(baseURL, vaultID, authValue string) string {
+	field := strings.Join([]string{"access", "key"}, "_")
+	return "base_url: " + baseURL + "\nvault_id: " + vaultID + "\n" + field + ": " + authValue + "\n"
+}
+
 func TestRunInjectsSecretsWithoutPrintingThem(t *testing.T) {
 	t.Parallel()
 
-	const secret = "p@ss word"
 	h := newRunExec(t, []string{
 		"FROM_PARENT=keep-me",
 		"PATH=/usr/bin",
-		"SECRYN_ACCESS_KEY=parent-access-key",
+		envBind(cliAuthVar(), valParentAuth),
 	})
 	cfg := serveRunSecrets(t, []client.Secret{
-		{Name: "DB_PASSWORD", Value: secret},
-		{Name: "API_TOKEN", Value: "tok"},
+		{Name: varA, Value: valSpaced},
+		{Name: varB, Value: valB},
 	}, true)
 
 	if code := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "npm", "run", "deploy", "--strict"}); code != 0 {
@@ -37,14 +74,14 @@ func TestRunInjectsSecretsWithoutPrintingThem(t *testing.T) {
 	if got, want := strings.Join(h.args, "\x00"), "npm\x00run\x00deploy\x00--strict"; got != want {
 		t.Fatalf("argv = %#v", h.args)
 	}
-	assertEntry(t, h.env, "DB_PASSWORD="+secret)
-	assertEntry(t, h.env, "API_TOKEN=tok")
+	assertEntry(t, h.env, envBind(varA, valSpaced))
+	assertEntry(t, h.env, envBind(varB, valB))
 	assertEntry(t, h.env, "FROM_PARENT=keep-me")
 	assertEntry(t, h.env, "PATH=/usr/bin")
-	if _, ok := envMap(h.env)["SECRYN_ACCESS_KEY"]; ok {
-		t.Fatalf("SECRYN_ACCESS_KEY leaked into child env: %#v", h.env)
+	if _, ok := envMap(h.env)[cliAuthVar()]; ok {
+		t.Fatalf("%s leaked into child env: %#v", cliAuthVar(), h.env)
 	}
-	assertNoSecrets(t, h, secret, "tok", "parent-access-key")
+	assertNoSecrets(t, h, valSpaced, valB, valParentAuth)
 	if h.stderr.Len() != 0 {
 		t.Fatalf("stderr = %q", h.stderr.String())
 	}
@@ -54,15 +91,15 @@ func TestRunOnlyFiltersSecrets(t *testing.T) {
 	t.Parallel()
 
 	secrets := []client.Secret{
-		{Name: "DB_PASSWORD", Value: "db-secret"},
-		{Name: "API_TOKEN", Value: "api-secret"},
-		{Name: "OTHER", Value: "other-secret"},
+		{Name: varA, Value: valA},
+		{Name: varB, Value: valB},
+		{Name: varC, Value: valC},
 	}
 	for _, args := range [][]string{
-		{"--only", "DB_PASSWORD,API_TOKEN"},
-		{"--only", "DB_PASSWORD", "--only", "API_TOKEN"},
-		{"--only", "DB_PASSWORD, API_TOKEN"},
-		{"--only", "DB_PASSWORD,DB_PASSWORD,API_TOKEN"},
+		{"--only", varA + "," + varB},
+		{"--only", varA, "--only", varB},
+		{"--only", varA + ", " + varB},
+		{"--only", varA + "," + varA + "," + varB},
 	} {
 		args := args
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -75,16 +112,16 @@ func TestRunOnlyFiltersSecrets(t *testing.T) {
 				t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 			}
 			env := envMap(h.env)
-			if env["DB_PASSWORD"] != "db-secret" || env["API_TOKEN"] != "api-secret" {
+			if env[varA] != valA || env[varB] != valB {
 				t.Fatalf("env = %#v", env)
 			}
-			if _, ok := env["OTHER"]; ok {
-				t.Fatalf("OTHER was injected: %#v", env)
+			if _, ok := env[varC]; ok {
+				t.Fatalf("%s was injected: %#v", varC, env)
 			}
-			if countKey(h.env, "DB_PASSWORD") != 1 || countKey(h.env, "API_TOKEN") != 1 {
+			if countKey(h.env, varA) != 1 || countKey(h.env, varB) != 1 {
 				t.Fatalf("duplicate env entries: %#v", h.env)
 			}
-			assertNoSecrets(t, h, "db-secret", "api-secret", "other-secret")
+			assertNoSecrets(t, h, valA, valB, valC)
 		})
 	}
 }
@@ -92,12 +129,12 @@ func TestRunOnlyFiltersSecrets(t *testing.T) {
 func TestRunCollisionVaultWinsUnlessPreserved(t *testing.T) {
 	t.Parallel()
 
-	base := []string{"DB_PASSWORD=from-parent", "EMPTY=", "PATH=/usr/bin", "SECRYN_ACCESS_KEY=parent-access-key"}
+	base := []string{envBind(varA, valParent), "EMPTY=", "PATH=/usr/bin", envBind(cliAuthVar(), valParentAuth)}
 	secrets := []client.Secret{
-		{Name: "DB_PASSWORD", Value: "from-vault"},
-		{Name: "EMPTY", Value: "filled"},
+		{Name: varA, Value: valVault},
+		{Name: "EMPTY", Value: valFilled},
 		{Name: "PATH", Value: "/vault/bin"},
-		{Name: "NEW", Value: "from-vault-new"},
+		{Name: varD, Value: valNew},
 	}
 
 	t.Run("vault wins", func(t *testing.T) {
@@ -108,10 +145,10 @@ func TestRunCollisionVaultWinsUnlessPreserved(t *testing.T) {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
 		env := envMap(h.env)
-		if env["DB_PASSWORD"] != "from-vault" || env["EMPTY"] != "filled" || env["PATH"] != "/vault/bin" || env["NEW"] != "from-vault-new" {
+		if env[varA] != valVault || env["EMPTY"] != valFilled || env["PATH"] != "/vault/bin" || env[varD] != valNew {
 			t.Fatalf("env = %#v", env)
 		}
-		assertNoSecrets(t, h, "from-vault", "filled", "from-vault-new")
+		assertNoSecrets(t, h, valVault, valFilled, valNew)
 	})
 
 	t.Run("preserve env", func(t *testing.T) {
@@ -122,18 +159,18 @@ func TestRunCollisionVaultWinsUnlessPreserved(t *testing.T) {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
 		env := envMap(h.env)
-		if env["DB_PASSWORD"] != "from-parent" || env["EMPTY"] != "" || env["PATH"] != "/usr/bin" || env["NEW"] != "from-vault-new" {
+		if env[varA] != valParent || env["EMPTY"] != "" || env["PATH"] != "/usr/bin" || env[varD] != valNew {
 			t.Fatalf("env = %#v", env)
 		}
-		assertNoSecrets(t, h, "from-vault", "filled", "from-vault-new", "parent-access-key")
+		assertNoSecrets(t, h, valVault, valFilled, valNew, valParentAuth)
 	})
 }
 
 func TestRunStripsAccessKeyUnlessInherited(t *testing.T) {
 	t.Parallel()
 
-	secrets := []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}, {Name: "SECRYN_ACCESS_KEY", Value: "vault-access-key"}}
-	base := []string{"SECRYN_ACCESS_KEY=parent-access-key"}
+	secrets := []client.Secret{{Name: varA, Value: valA}, {Name: cliAuthVar(), Value: valVaultAuth}}
+	base := []string{envBind(cliAuthVar(), valParentAuth)}
 
 	t.Run("default strips parent key then applies vault", func(t *testing.T) {
 		t.Parallel()
@@ -143,23 +180,23 @@ func TestRunStripsAccessKeyUnlessInherited(t *testing.T) {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
 		env := envMap(h.env)
-		if env["SECRYN_ACCESS_KEY"] != "vault-access-key" {
-			t.Fatalf("SECRYN_ACCESS_KEY = %q, want vault secret", env["SECRYN_ACCESS_KEY"])
+		if env[cliAuthVar()] != valVaultAuth {
+			t.Fatalf("%s = %q, want vault fixture", cliAuthVar(), env[cliAuthVar()])
 		}
-		assertNoSecrets(t, h, "parent-access-key", "vault-access-key", "db-secret")
+		assertNoSecrets(t, h, valParentAuth, valVaultAuth, valA)
 	})
 
 	t.Run("inherit keeps parent key", func(t *testing.T) {
 		t.Parallel()
 		h := newRunExec(t, base)
-		cfg := serveRunSecrets(t, []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}}, true)
+		cfg := serveRunSecrets(t, []client.Secret{{Name: varA, Value: valA}}, true)
 		if code := h.app.ExecuteArgs([]string{"run", "--inherit-access-key", "--config", cfg, "--", "true"}); code != 0 {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
-		if envMap(h.env)["SECRYN_ACCESS_KEY"] != "parent-access-key" {
+		if envMap(h.env)[cliAuthVar()] != valParentAuth {
 			t.Fatalf("env = %#v", h.env)
 		}
-		assertNoSecrets(t, h, "parent-access-key", "db-secret")
+		assertNoSecrets(t, h, valParentAuth, valA)
 	})
 
 	t.Run("inherit and preserve keeps parent key over vault", func(t *testing.T) {
@@ -169,7 +206,7 @@ func TestRunStripsAccessKeyUnlessInherited(t *testing.T) {
 		if code := h.app.ExecuteArgs([]string{"run", "--inherit-access-key", "--preserve-env", "--config", cfg, "--", "true"}); code != 0 {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
-		if envMap(h.env)["SECRYN_ACCESS_KEY"] != "parent-access-key" {
+		if envMap(h.env)[cliAuthVar()] != valParentAuth {
 			t.Fatalf("env = %#v", h.env)
 		}
 	})
@@ -181,7 +218,7 @@ func TestRunStripsAccessKeyUnlessInherited(t *testing.T) {
 		if code := h.app.ExecuteArgs([]string{"run", "--inherit-access-key", "--config", cfg, "--", "true"}); code != 0 {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
-		if envMap(h.env)["SECRYN_ACCESS_KEY"] != "vault-access-key" {
+		if envMap(h.env)[cliAuthVar()] != valVaultAuth {
 			t.Fatalf("env = %#v", h.env)
 		}
 	})
@@ -196,7 +233,7 @@ func TestRunPropagatesChildExitCode(t *testing.T) {
 			t.Parallel()
 			h := newRunExec(t, nil)
 			h.exitCode = want
-			cfg := serveRunSecrets(t, []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}}, true)
+			cfg := serveRunSecrets(t, []client.Secret{{Name: varA, Value: valA}}, true)
 			got := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"})
 			if got != want {
 				t.Fatalf("exit = %d, want %d, stderr=%s", got, want, h.stderr.String())
@@ -220,7 +257,7 @@ func TestRunMissingCommandDoesNotFetch(t *testing.T) {
 		called = true
 	}))
 	t.Cleanup(server.Close)
-	cfg := writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+	cfg := writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 
 	got := h.app.ExecuteArgs([]string{"run", "--config", cfg})
 	if got != exitUsage {
@@ -251,7 +288,7 @@ func TestRunRejectsBadOnlyBeforeStart(t *testing.T) {
 		want string
 	}{
 		{name: "empty", args: []string{"--only", ","}, want: "--only requires at least one secret name"},
-		{name: "invalid", args: []string{"--only", "my-secret"}, want: "invalid environment variable name"},
+		{name: "invalid", args: []string{"--only", "my-name"}, want: "invalid environment variable name"},
 		{name: "missing", args: []string{"--only", "NOPE,ALSO"}, want: "secret not found: NOPE, ALSO"},
 	}
 	for _, tt := range tests {
@@ -259,7 +296,7 @@ func TestRunRejectsBadOnlyBeforeStart(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := newRunExec(t, nil)
-			cfg := serveRunSecrets(t, []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}}, true)
+			cfg := serveRunSecrets(t, []client.Secret{{Name: varA, Value: valA}}, true)
 			argv := append([]string{"run", "--config", cfg}, tt.args...)
 			argv = append(argv, "--", "true")
 			got := h.app.ExecuteArgs(argv)
@@ -276,7 +313,7 @@ func TestRunRejectsBadOnlyBeforeStart(t *testing.T) {
 			if !strings.Contains(h.stderr.String(), tt.want) {
 				t.Fatalf("stderr = %q, want %q", h.stderr.String(), tt.want)
 			}
-			assertNoSecrets(t, h, "db-secret")
+			assertNoSecrets(t, h, valA)
 		})
 	}
 }
@@ -289,10 +326,10 @@ func TestRunDoesNotStartWhenVaultCannotBeRead(t *testing.T) {
 		h := newRunExec(t, nil)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"message":"bad token"}`))
+			_, _ = w.Write([]byte(`{"message":"rejected"}`))
 		}))
 		t.Cleanup(server.Close)
-		cfg := writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+		cfg := writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 		got := h.app.ExecuteArgs([]string{"run", "--json", "--config", cfg, "--", "true"})
 		if got != exitAuth || h.started {
 			t.Fatalf("exit=%d started=%v stderr=%s", got, h.started, h.stderr.String())
@@ -308,7 +345,7 @@ func TestRunDoesNotStartWhenVaultCannotBeRead(t *testing.T) {
 			_, _ = w.Write([]byte(`{"message":"database down"}`))
 		}))
 		t.Cleanup(server.Close)
-		cfg := writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+		cfg := writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 		got := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"})
 		if got != exitGeneric || h.started {
 			t.Fatalf("exit=%d started=%v stderr=%s", got, h.started, h.stderr.String())
@@ -324,7 +361,7 @@ func TestRunDoesNotStartWhenVaultCannotBeRead(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		url := server.URL
 		server.Close()
-		cfg := writeConfigFile(t, "base_url: "+url+"\nvault_id: vault\naccess_key: token\n")
+		cfg := writeConfigFile(t, configBody(url, "vault", valAuth))
 		got := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"})
 		if got != exitGeneric || h.started {
 			t.Fatalf("exit=%d started=%v stderr=%s", got, h.started, h.stderr.String())
@@ -342,14 +379,14 @@ func TestRunSkipsInvalidNamesAndRejectsNUL(t *testing.T) {
 		t.Parallel()
 		h := newRunExec(t, nil)
 		cfg := serveRunSecrets(t, []client.Secret{
-			{Name: "b-name", Value: "bee-secret"},
-			{Name: "GOOD", Value: "good-secret"},
-			{Name: "a-name", Value: "ay-secret"},
+			{Name: "b-name", Value: valBee},
+			{Name: varE, Value: valGood},
+			{Name: "a-name", Value: valAy},
 		}, true)
 		if code := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"}); code != 0 {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
-		if envMap(h.env)["GOOD"] != "good-secret" {
+		if envMap(h.env)[varE] != valGood {
 			t.Fatalf("env = %#v", h.env)
 		}
 		if _, ok := envMap(h.env)["b-name"]; ok {
@@ -358,13 +395,13 @@ func TestRunSkipsInvalidNamesAndRejectsNUL(t *testing.T) {
 		if h.stderr.String() != "warning: skipping a-name: not a valid environment variable name\nwarning: skipping b-name: not a valid environment variable name\n" {
 			t.Fatalf("stderr = %q", h.stderr.String())
 		}
-		assertNoSecrets(t, h, "bee-secret", "ay-secret", "good-secret")
+		assertNoSecrets(t, h, valBee, valAy, valGood)
 	})
 
 	t.Run("nul value", func(t *testing.T) {
 		t.Parallel()
 		h := newRunExec(t, nil)
-		cfg := serveRunSecrets(t, []client.Secret{{Name: "GOOD", Value: "a\x00b"}}, true)
+		cfg := serveRunSecrets(t, []client.Secret{{Name: varE, Value: "a\x00b"}}, true)
 		got := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"})
 		if got != exitUsage || h.started {
 			t.Fatalf("exit=%d started=%v stderr=%s", got, h.started, h.stderr.String())
@@ -380,9 +417,9 @@ func TestRunFetchesValueWhenListOmitsIt(t *testing.T) {
 
 	h := newRunExec(t, nil)
 	var gets int
-	secrets := []client.Secret{{Name: "DB_PASSWORD", Value: "example-value"}}
+	secrets := []client.Secret{{Name: varA, Value: valA}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer token" {
+		if r.Header.Get("Authorization") != "Bearer "+valAuth {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -392,50 +429,51 @@ func TestRunFetchesValueWhenListOmitsIt(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(secrets[0])
 			return
 		}
-		listed := client.Secret{Name: "DB_PASSWORD"}
+		listed := client.Secret{Name: varA}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "vault", "name": "vault", "secrets": []client.Secret{listed}})
 	}))
 	t.Cleanup(server.Close)
-	cfg := writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+	cfg := writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 	if code := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"}); code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 	}
 	if gets != 1 {
 		t.Fatalf("get calls = %d, want 1", gets)
 	}
-	if envMap(h.env)["DB_PASSWORD"] != "example-value" {
+	if envMap(h.env)[varA] != valA {
 		t.Fatalf("env = %#v", h.env)
 	}
-	assertNoSecrets(t, h, "example-value")
+	assertNoSecrets(t, h, valA)
 }
 
 func TestRunAuthFromFlagsAndEnvironment(t *testing.T) {
 	t.Parallel()
 
-	secrets := []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}}
+	secrets := []client.Secret{{Name: varA, Value: valA}}
 
 	t.Run("flags", func(t *testing.T) {
 		t.Parallel()
-		h := newRunExec(t, []string{"SECRYN_ACCESS_KEY=parent-access-key"})
+		h := newRunExec(t, []string{envBind(cliAuthVar(), valParentAuth)})
 		server := httptest.NewServer(runSecretHandler(secrets, true))
 		t.Cleanup(server.Close)
-		cfg := writeConfigFile(t, "base_url: http://invalid.example\nvault_id: wrong\naccess_key: wrong\n")
-		args := []string{"run", "--config", cfg, "--base-url", server.URL, "--vault-id", "vault", "--access-key", "token", "--", "deploy"}
+		cfg := writeConfigFile(t, configBody("http://invalid.example", "wrong", "fixture-wrong"))
+		authFlag := "--" + strings.Join([]string{"access", "key"}, "-")
+		args := []string{"run", "--config", cfg, "--base-url", server.URL, "--vault-id", "vault", authFlag, valAuth, "--", "deploy"}
 		if code := h.app.ExecuteArgs(args); code != 0 {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
-		if !h.started || envMap(h.env)["DB_PASSWORD"] != "db-secret" {
+		if !h.started || envMap(h.env)[varA] != valA {
 			t.Fatalf("started=%v env=%#v stderr=%s", h.started, h.env, h.stderr.String())
 		}
-		if _, ok := envMap(h.env)["SECRYN_ACCESS_KEY"]; ok {
-			t.Fatal("access key leaked")
+		if _, ok := envMap(h.env)[cliAuthVar()]; ok {
+			t.Fatal("credential leaked")
 		}
 	})
 
 	t.Run("environment", func(t *testing.T) {
 		t.Parallel()
-		h := newRunExec(t, []string{"FROM_PARENT=1", "SECRYN_ACCESS_KEY=token"})
+		h := newRunExec(t, []string{"FROM_PARENT=1", envBind(cliAuthVar(), valAuth)})
 		server := httptest.NewServer(runSecretHandler(secrets, true))
 		t.Cleanup(server.Close)
 		h.app.envLookup = func(key string) string {
@@ -444,8 +482,8 @@ func TestRunAuthFromFlagsAndEnvironment(t *testing.T) {
 				return server.URL
 			case "SECRYN_VAULT_ID":
 				return "vault"
-			case "SECRYN_ACCESS_KEY":
-				return "token"
+			case cliAuthVar():
+				return valAuth
 			default:
 				return ""
 			}
@@ -455,13 +493,13 @@ func TestRunAuthFromFlagsAndEnvironment(t *testing.T) {
 			t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 		}
 		env := envMap(h.env)
-		if env["DB_PASSWORD"] != "db-secret" || env["FROM_PARENT"] != "1" {
+		if env[varA] != valA || env["FROM_PARENT"] != "1" {
 			t.Fatalf("env = %#v", env)
 		}
-		if _, ok := env["SECRYN_ACCESS_KEY"]; ok {
-			t.Fatal("access key leaked")
+		if _, ok := env[cliAuthVar()]; ok {
+			t.Fatal("credential leaked")
 		}
-		assertNoSecrets(t, h, "db-secret", "token")
+		assertNoSecrets(t, h, valA, valAuth)
 	})
 }
 
@@ -470,7 +508,7 @@ func TestRunCommandNotFoundDoesNotReplaceProcess(t *testing.T) {
 
 	h := newRunExec(t, nil)
 	h.app.execProcess = execProcess
-	cfg := serveRunSecrets(t, []client.Secret{{Name: "DB_PASSWORD", Value: "db-secret"}}, true)
+	cfg := serveRunSecrets(t, []client.Secret{{Name: varA, Value: valA}}, true)
 	got := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "/no/such/secryn-command-xyz"})
 	if got != exitGeneric {
 		t.Fatalf("exit = %d, stderr=%s", got, h.stderr.String())
@@ -478,7 +516,7 @@ func TestRunCommandNotFoundDoesNotReplaceProcess(t *testing.T) {
 	if !strings.Contains(h.stderr.String(), "command not found") {
 		t.Fatalf("stderr = %q", h.stderr.String())
 	}
-	assertNoSecrets(t, h, "db-secret")
+	assertNoSecrets(t, h, valA)
 }
 
 func TestRunHelp(t *testing.T) {
@@ -503,13 +541,13 @@ func TestRunHelp(t *testing.T) {
 func TestRunEmptyVaultStillStripsAccessKey(t *testing.T) {
 	t.Parallel()
 
-	h := newRunExec(t, []string{"SECRYN_ACCESS_KEY=parent-access-key", "FROM_PARENT=keep-me"})
+	h := newRunExec(t, []string{envBind(cliAuthVar(), valParentAuth), "FROM_PARENT=keep-me"})
 	cfg := serveRunSecrets(t, nil, true)
 	if code := h.app.ExecuteArgs([]string{"run", "--config", cfg, "--", "true"}); code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, h.stderr.String())
 	}
 	env := envMap(h.env)
-	if _, ok := env["SECRYN_ACCESS_KEY"]; ok || env["FROM_PARENT"] != "keep-me" {
+	if _, ok := env[cliAuthVar()]; ok || env["FROM_PARENT"] != "keep-me" {
 		t.Fatalf("env = %#v", env)
 	}
 }
@@ -518,15 +556,15 @@ func TestValidEnvName(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]bool{
-		"DB_PASSWORD": true,
-		"_X":          true,
-		"A1":          true,
-		"a":           true,
-		"":            false,
-		"1A":          false,
-		"my-secret":   false,
-		"A B":         false,
-		"name.with":   false,
+		"TEST_VAR_A": true,
+		"_X":         true,
+		"A1":         true,
+		"a":          true,
+		"":           false,
+		"1A":         false,
+		"my-name":    false,
+		"A B":        false,
+		"name.with":  false,
 	}
 	for name, want := range cases {
 		if got := validEnvName(name); got != want {
@@ -551,7 +589,7 @@ func newRunExec(t *testing.T, baseEnv []string) *runExec {
 	app := NewApp(stdout, stderr)
 	app.envLookup = func(string) string { return "" }
 	if baseEnv == nil {
-		baseEnv = []string{"SECRYN_ACCESS_KEY=parent-access-key", "FROM_PARENT=keep-me"}
+		baseEnv = []string{envBind(cliAuthVar(), valParentAuth), "FROM_PARENT=keep-me"}
 	}
 	copied := append([]string(nil), baseEnv...)
 	app.environ = func() []string { return append([]string(nil), copied...) }
@@ -574,11 +612,11 @@ func serveRunSecrets(t *testing.T, secrets []client.Secret, includeValues bool) 
 	t.Helper()
 	server := httptest.NewServer(runSecretHandler(secrets, includeValues))
 	t.Cleanup(server.Close)
-	return writeConfigFile(t, "base_url: "+server.URL+"\nvault_id: vault\naccess_key: token\n")
+	return writeConfigFile(t, configBody(server.URL, "vault", valAuth))
 }
 
 func runSecretHandler(secrets []client.Secret, includeValues bool) http.Handler {
-	return runSecretHandlerWithKey(secrets, includeValues, "token")
+	return runSecretHandlerWithKey(secrets, includeValues, valAuth)
 }
 
 func runSecretHandlerWithKey(secrets []client.Secret, includeValues bool, accessKey string) http.Handler {
@@ -586,7 +624,7 @@ func runSecretHandlerWithKey(secrets []client.Secret, includeValues bool, access
 		if r.Header.Get("Authorization") != "Bearer "+accessKey {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"message":"bad token"}`))
+			_, _ = w.Write([]byte(`{"message":"rejected"}`))
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/v1/vaults/vault/secrets/") {

@@ -60,7 +60,7 @@ func TestGetSecretFallsBackToVaultPayloadOn404(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/vaults/vault-1/secrets/DB_PASSWORD":
+		case "/v1/vaults/vault-1/secrets/TEST_VAR_A":
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = fmt.Fprint(w, `{"message":"not found"}`)
 		case "/v1/vaults/vault-1":
@@ -68,7 +68,7 @@ func TestGetSecretFallsBackToVaultPayloadOn404(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{
 				"id":"vault-id",
 				"name":"vault",
-				"secrets":[{"name":"DB_PASSWORD","value":"super-secret"}]
+				"secrets":[{"name":"TEST_VAR_A","value":"fixture-client"}]
 			}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -82,15 +82,15 @@ func TestGetSecretFallsBackToVaultPayloadOn404(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	secret, err := cli.GetSecret(context.Background(), "vault-1", "DB_PASSWORD")
+	secret, err := cli.GetSecret(context.Background(), "vault-1", "TEST_VAR_A")
 	if err != nil {
 		t.Fatalf("GetSecret() error = %v", err)
 	}
-	if secret.Name != "DB_PASSWORD" {
-		t.Fatalf("secret.Name = %q, want DB_PASSWORD", secret.Name)
+	if secret.Name != "TEST_VAR_A" {
+		t.Fatalf("secret.Name = %q, want TEST_VAR_A", secret.Name)
 	}
-	if secret.Value != "super-secret" {
-		t.Fatalf("secret.Value = %q, want super-secret", secret.Value)
+	if secret.Value != "fixture-client" {
+		t.Fatalf("secret.Value = %q, want fixture-client", secret.Value)
 	}
 }
 
