@@ -2,8 +2,12 @@ package client
 
 // Secret represents a secret record returned by the Secryn API.
 type Secret struct {
-	Name      string `json:"name"`
-	Value     string `json:"value,omitempty"`
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+	// UpdatedAt is set from the JSON field updated_at when the API sends it.
+	// GET /v1/vaults/{id} currently returns id, name, value, content_type, and
+	// tags only, so secret list shows an empty UPDATED_AT until the server
+	// includes a timestamp.
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 

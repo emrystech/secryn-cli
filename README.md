@@ -67,6 +67,9 @@ secryn secret get DB_PASSWORD --json
 
 secryn env pull > .env
 
+secryn run -- npm run deploy
+secryn run --only DB_PASSWORD,API_TOKEN -- python migrate.py
+
 secryn key list
 secryn key download KEY_ID --output key.pem
 
@@ -82,6 +85,26 @@ secryn update
 `secryn update` installs the latest GitHub release in place after verifying its
 published SHA-256 checksum. Use `secryn update --version v1.0.1` to install a
 specific release, or add `--json` for machine-readable output.
+
+## Run a command with secrets
+
+`secryn run` loads the vault with the same config, flags, and `SECRYN_*` variables as the other commands, then starts a process with those secrets in its environment. Values are passed only to that process. They are not written to stdout, stderr, or logs, so an agent can run a tool without taking the secret into its own context.
+
+```bash
+secryn run -- npm run deploy
+secryn run --only DB_PASSWORD,API_TOKEN -- python migrate.py --dry-run
+secryn run --preserve-env -- ./deploy.sh
+```
+
+Put `--` before the command when the command has its own flags.
+
+When a name exists in both the environment and the vault, the vault value wins, including names such as `PATH`. `--preserve-env` keeps variables that are already set (even when empty) and fills in only the missing names.
+
+`SECRYN_ACCESS_KEY` is removed from the child environment. `--inherit-access-key` passes it through.
+
+`--only` injects the listed secrets and fails if any name is missing. Other secret names that are not valid environment variables (for example `my-secret`) are skipped with a warning. The command is not started if authentication fails or the vault cannot be reached.
+
+On Linux and macOS, secryn replaces itself with the command. Signals such as Ctrl-C and SIGTERM go straight to that command, and the shell sees its exit code. On Windows, secryn stays running long enough to forward those signals and then exits with the command's status. Output is not masked: if the command prints a secret, that output is visible.
 
 ## CI/CD usage
 
@@ -127,6 +150,8 @@ sudo install -m 0755 secryn /usr/local/bin/secryn
 - `2`: usage/config error
 - `3`: authentication/authorization failure (`401/403`)
 - `4`: not found/gone (`404/410`)
+
+`secryn run` uses those codes when the command never starts. After the command starts, secryn exits with that command's status.
 
 ## Development
 

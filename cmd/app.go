@@ -28,21 +28,25 @@ type rootFlags struct {
 const skipConfigAnnotation = "skip-config"
 
 type App struct {
-	stdout     io.Writer
-	stderr     io.Writer
-	envLookup  func(string) string
-	httpClient *http.Client
-	flags      rootFlags
-	cfgPath    string
-	runtimeCfg config.Config
+	stdout      io.Writer
+	stderr      io.Writer
+	envLookup   func(string) string
+	environ     func() []string
+	execProcess func(argv []string, env []string) error
+	httpClient  *http.Client
+	flags       rootFlags
+	cfgPath     string
+	runtimeCfg  config.Config
 }
 
 func NewApp(stdout, stderr io.Writer) *App {
 	return &App{
-		stdout:     stdout,
-		stderr:     stderr,
-		envLookup:  os.Getenv,
-		httpClient: &http.Client{},
+		stdout:      stdout,
+		stderr:      stderr,
+		envLookup:   os.Getenv,
+		environ:     os.Environ,
+		execProcess: execProcess,
+		httpClient:  &http.Client{},
 	}
 }
 
@@ -58,7 +62,16 @@ func (a *App) Execute() int {
 func (a *App) ExecuteArgs(args []string) int {
 	root := a.newRootCommand()
 	root.SetArgs(args)
+	root.SetOut(a.stdout)
+	root.SetErr(a.stderr)
 	if err := root.Execute(); err != nil {
+		var childErr *childExitError
+		if errors.As(err, &childErr) {
+			if childErr.Code < 0 {
+				return exitGeneric
+			}
+			return childErr.Code
+		}
 		var cliErr *CLIError
 		if errors.As(err, &cliErr) {
 			a.writeError(cliErr)
@@ -113,6 +126,7 @@ func (a *App) newRootCommand() *cobra.Command {
 		a.newConfigCommand(),
 		a.newSecretCommand(),
 		a.newEnvCommand(),
+		a.newRunCommand(),
 		a.newKeyCommand(),
 		a.newCertCommand(),
 		a.newAuthCommand(),
