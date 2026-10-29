@@ -15,7 +15,7 @@ curl -fsSL https://cli.secryn.io | bash
 Pinned version:
 
 ```bash
-curl -fsSL https://cli.secryn.io | bash -s -- --version v1.0.0
+curl -fsSL https://cli.secryn.io | bash -s -- --version v1.0.3
 ```
 
 Notes:
@@ -68,7 +68,6 @@ secryn secret get DB_PASSWORD --json
 secryn env pull > .env
 
 secryn run -- npm run deploy
-secryn run --only DB_PASSWORD,API_TOKEN -- python migrate.py
 
 secryn key list
 secryn key download KEY_ID --output key.pem
@@ -88,23 +87,21 @@ specific release, or add `--json` for machine-readable output.
 
 ## Run a command with secrets
 
-`secryn run` loads the vault with the same config, flags, and `SECRYN_*` variables as the other commands, then starts a process with those secrets in its environment. Values are passed only to that process. They are not written to stdout, stderr, or logs, so an agent can run a tool without taking the secret into its own context.
+```text
+secryn run [flags] -- <command> [args...]
+```
 
 ```bash
 secryn run -- npm run deploy
-secryn run --only DB_PASSWORD,API_TOKEN -- python migrate.py --dry-run
-secryn run --preserve-env -- ./deploy.sh
 ```
 
-Put `--` before the command when the command has its own flags.
+`secryn run` fetches secrets from the configured vault and runs the command with those values in its environment. Values are handed only to that process and are never printed. Put `--` before the command when the command has its own flags. The command is not started if the vault cannot be read or authentication fails.
 
-When a name exists in both the environment and the vault, the vault value wins, including names such as `PATH`. `--preserve-env` keeps variables that are already set (even when empty) and fills in only the missing names.
+- `--only` injects only these secrets (comma-separated or repeated). The command is not started if the list is empty, a named secret is missing, or a name is not a valid environment variable. Without `--only`, names that are not valid environment variables (for example `my-secret`) are skipped with a warning.
+- `--preserve-env` keeps variables that are already set, even when empty, and uses the vault only for names that are missing. Without it, a vault secret replaces an existing variable of the same name, including `PATH`.
+- `--inherit-access-key` passes `SECRYN_ACCESS_KEY` through to the command. Without it, `SECRYN_ACCESS_KEY` is removed from the child environment.
 
-`SECRYN_ACCESS_KEY` is removed from the child environment. `--inherit-access-key` passes it through.
-
-`--only` injects the listed secrets and fails if any name is missing. Other secret names that are not valid environment variables (for example `my-secret`) are skipped with a warning. The command is not started if authentication fails or the vault cannot be reached.
-
-On Linux and macOS, secryn replaces itself with the command. Signals such as Ctrl-C and SIGTERM go straight to that command, and the shell sees its exit code. On Windows, secryn stays running long enough to forward those signals and then exits with the command's status. Output is not masked: if the command prints a secret, that output is visible.
+See [docs.secryn.io](https://docs.secryn.io) for detail.
 
 ## CI/CD usage
 
@@ -136,8 +133,8 @@ For a pinned, auditable manual install, download the versioned archive and its
 published checksum, then verify the archive before extracting it:
 
 ```bash
-curl -fsSLo secryn_linux_amd64.tar.gz https://github.com/emrystech/secryn-cli/releases/download/v1.0.0/secryn_linux_amd64.tar.gz
-curl -fsSLo checksums.txt https://github.com/emrystech/secryn-cli/releases/download/v1.0.0/checksums.txt
+curl -fsSLo secryn_linux_amd64.tar.gz https://github.com/emrystech/secryn-cli/releases/download/v1.0.3/secryn_linux_amd64.tar.gz
+curl -fsSLo checksums.txt https://github.com/emrystech/secryn-cli/releases/download/v1.0.3/checksums.txt
 grep 'secryn_linux_amd64.tar.gz' checksums.txt | sha256sum -c -
 tar --no-same-owner -xzf secryn_linux_amd64.tar.gz
 sudo install -m 0755 secryn /usr/local/bin/secryn
